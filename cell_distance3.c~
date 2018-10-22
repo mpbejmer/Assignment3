@@ -1,0 +1,232 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <omp.h>
+#include <time.h>
+
+long int MAX_MEMORY_STORAGE = 1024*1024;
+int BYTES_PER_LINE = 24; //For all cell files
+int MAX_NBR_CELLS_IN_ARRAY;
+int MAX_NBR_CELLS_IN_BLOCK;
+
+//distances variables
+float MAX_DISTANCE = sqrt(3*20*20); //Max distance in coordinate system bounded by -10 to 10
+float NBR_DISTANCE_POINTS;
+int NBR_DISTANCE_POINTS_int;
+
+unsigned int * distances;
+
+int nbr_threads;
+unsigned long int nbr_cells = 0;
+
+//cell file
+FILE *fp;
+
+//block size for calculations
+
+//FUNCTIONS
+void calculate_distances(float ** cells_block_main, float ** cells_block_sec, int nbr_cells_main, int nbr_cells_sec);
+float ** parse_cells_from_file(int nbr_cells_in_block, long int pointer_position);
+//generate_random_cells(int nbr_of_cells); /generate random cells
+
+
+int main(int argc, char * argv[]){
+
+  //kinda constants
+  MAX_NBR_CELLS_IN_ARRAY = (MAX_MEMORY_STORAGE / 12);
+  MAX_NBR_CELLS_IN_BLOCK = (MAX_NBR_CELLS_IN_ARRAY / 2);
+  NBR_DISTANCE_POINTS = MAX_DISTANCE/0.01 + 0.5; //2 decimal precision
+  NBR_DISTANCE_POINTS_int = (int) NBR_DISTANCE_POINTS;
+  
+  //Parse command line arguments
+  memmove(argv[1], argv[1]+2, strlen(argv[1])); //Removing -t
+  sscanf(argv[1], "%d", &nbr_threads);
+  
+  omp_set_num_threads(nbr_threads); //Sets number of threads
+  
+  //create array of distances
+  distances = (unsigned int*) malloc(sizeof(unsigned int)*NBR_DISTANCE_POINTS);
+  for(int ix=0; ix<NBR_DISTANCE_POINTS; ix++){
+    distances[ix] = 0; //index related to distance: ix*10
+  }
+  
+  fp = fopen("cell_e5", "r");
+  //count lines
+  fseek(fp, 0, SEEK_END);
+  long long unsigned int size_of_file = ftell(fp);
+  int nbr_cells_in_file = size_of_file / BYTES_PER_LINE;
+  //printf("nbr_cells: %d\n", nbr_cells);
+
+  int nbr_blocks = 1;
+  int cells_in_block = nbr_cells_in_file;
+  int cells_in_block_rest = nbr_cells_in_file;
+  if(nbr_cells_in_file > MAX_NBR_CELLS_IN_ARRAY){
+    cells_in_block = MAX_NBR_CELLS_IN_BLOCK;
+    nbr_blocks = nbr_cells_in_file / cells_in_block;
+    cells_in_block_rest = nbr_cells_in_file % cells_in_block;
+    nbr_blocks++;
+    printf("%ld %d %d %d\n", nbr_cells_in_file, cells_in_block, nbr_blocks, cells_in_block_rest);
+  }
+  
+  long long int pointer_position1;
+  long long int pointer_position2;
+  //long long int pointer_position;
+  for(int block_ix=1; block_ix<=nbr_blocks; block_ix++){
+
+    float ** cells_block1;
+    float * cells_block1_entries;
+    pointer_position1 = (block_ix-1) * cells_in_block * BYTES_PER_LINE;
+    if(block_ix == nbr_blocks){
+      cells_block1_entries = (float *) calloc(3*cells_in_block_rest,sizeof(float));
+      cells_block1 = (float **) calloc(cells_in_block_rest,sizeof(float *));
+      for(int ix=0, jx=0; ix<cells_in_block_rest; ix++, jx+=3){
+	cells_block1[ix] = cells_block1_entries + jx;
+      }
+      fseek(fp, pointer_position1, SEEK_SET);
+      for(int ix=0; ix<cells_in_block_rest; ix++){
+	fscanf(fp, "%f %f %f", &cells_block1[ix][0], &cells_block1[ix][1], &cells_block1[ix][2]);
+      }
+    } else {
+      cells_block1_entries = (float *) calloc(3*cells_in_block, sizeof(float));
+      cells_block1 = (float **) calloc(cells_in_block,sizeof(float *));
+      for(int ix=0, jx=0; ix<cells_in_block; ix++, jx+=3){
+	cells_block1[ix] = cells_block1_entries + jx;
+      }
+      fseek(fp, pointer_position1, SEEK_SET);
+      for(int ix=0; ix<cells_in_block; ix++){
+	fscanf(fp, "%f %f %f", &cells_block1[ix][0], &cells_block1[ix][1], &cells_block1[ix][2]);
+      }
+    }
+    printf("index1: %d, pointer_position1: %lld\n", block_ix, pointer_position1);
+    for(int block2_ix=block_ix; block2_ix<=nbr_blocks; block2_ix++){
+
+      float ** cells_block2;
+      float * cells_block2_entries;
+      pointer_position2 = (block2_ix-1) * cells_in_block * BYTES_PER_LINE;
+      printf("index2: %d, pointer_position2: %lld\n", block2_ix, pointer_position2);
+      if(block2_ix == nbr_blocks){
+	cells_block2_entries = (float *) calloc(3*cells_in_block_rest,sizeof(float));
+	cells_block2 = (float **) calloc(cells_in_block_rest,sizeof(float *));
+	for(int ix=0, jx=0; ix<cells_in_block_rest; ix++, jx+=3){
+	  cells_block2[ix] = cells_block2_entries + jx;
+	}
+	//PARSE
+	fseek(fp, pointer_position2, SEEK_SET);
+	for(int ix=0; ix<cells_in_block_rest; ix++){
+	  fscanf(fp, "%f %f %f", &cells_block1[ix][0], &cells_block1[ix][1], &cells_block1[ix][2]);
+	}
+      } else {
+	cells_block2_entries = (float *) calloc(3*cells_in_block,sizeof(float));
+	cells_block2 = (float **) calloc(cells_in_block,sizeof(float *));
+	for(int ix=0, jx=0; ix<cells_in_block; ix++, jx+=3){
+	  cells_block2[ix] = cells_block2_entries + jx;
+	}
+	//PARSE
+	fseek(fp, pointer_position2, SEEK_SET);
+	for(int ix=0; ix<cells_in_block; ix++){
+	  fscanf(fp, "%f %f %f", &cells_block2[ix][0], &cells_block2[ix][1], &cells_block2[ix][2]);
+	}
+      }
+    
+      //Calculate distances
+      if(block_ix == nbr_blocks){
+	if(block2_ix == nbr_blocks){
+	  calculate_distances(cells_block1, cells_block2, cells_in_block_rest, cells_in_block_rest);
+	}else {
+	  calculate_distances(cells_block1, cells_block2, cells_in_block_rest, cells_in_block);
+	}
+      } else {
+	if(block2_ix == nbr_blocks){
+	  calculate_distances(cells_block1, cells_block2, cells_in_block, cells_in_block_rest);
+	} else {
+	  calculate_distances(cells_block1, cells_block2, cells_in_block, cells_in_block);
+	}
+      }
+      free(cells_block2);
+      free(cells_block2_entries);
+    }//end for block2_ix
+    free(cells_block1);
+    free(cells_block1_entries);
+  }//end for block_ix
+  distances[0] = 0;
+  fclose(fp);
+
+  double sum = 0;
+  for(size_t ix=0; ix<NBR_DISTANCE_POINTS; ix++){
+    //printf("%d %d\n", ix, distances[ix]); //debug
+    if(distances[ix] != 0){
+      double dist = (double) ix/100;
+      sum += distances[ix]; //debug
+      //printf("%05.02lf %d\n", dist, distances[ix]);
+    }
+  }
+  double diff = 100000.0*(100000.0-1.0)/2 - sum;
+  double frac = diff / sum;
+  printf("Total sum: %lf\n", sum);
+  printf("Diff: %lf\n", diff);
+  printf("frac: %lf\n", frac);
+  //printf("NBR_DISTANCE_POINTS: %f\n",NBR_DISTANCE_POINTS);
+  //printf("NBR_DISTANCE_POINTS_int: %d\n",NBR_DISTANCE_POINTS_int);
+  
+  free(distances);
+}
+
+
+void calculate_distances(float ** cells_block_main, float ** cells_block_sec, int nbr_cells_main, int nbr_cells_sec){
+  if((cells_block_main[0][0] - cells_block_sec[0][0]) < 0.001){
+    printf("yes\n");
+#pragma omp parallel for schedule(dynamic) reduction(+:distances[:NBR_DISTANCE_POINTS_int])
+    for(size_t ix=0; ix<nbr_cells_main; ix++){
+      float ax = cells_block_main[ix][0];
+      float ay = cells_block_main[ix][1];
+      float az = cells_block_main[ix][2];
+      for(size_t jx=ix+1; jx<nbr_cells_sec; jx++){
+	float dist;
+	int int_dist;
+	float dx = ax-cells_block_sec[jx][0];
+	float dy = ay-cells_block_sec[jx][1];
+	float dz = az-cells_block_sec[jx][2];
+	dist = dx*dx + dy*dy + dz*dz;
+	dist = sqrt(dist)*10*10 + 0.5;
+	int_dist = (int) dist;
+	distances[int_dist]++;
+      }
+    }
+  } else {
+#pragma omp parallel for schedule(dynamic) reduction(+:distances[:NBR_DISTANCE_POINTS_int])
+    for(size_t ix=0; ix<nbr_cells_main; ix++){
+      float ax = cells_block_main[ix][0];
+      float ay = cells_block_main[ix][1];
+      float az = cells_block_main[ix][2];
+      for(size_t jx=0; jx<nbr_cells_sec; jx++){
+	float dist;
+	int int_dist;
+	float dx = ax-cells_block_sec[jx][0];
+	float dy = ay-cells_block_sec[jx][1];
+	float dz = az-cells_block_sec[jx][2];
+	dist = dx*dx + dy*dy + dz*dz;
+	dist = sqrt(dist)*10*10 + 0.5;
+	int_dist = (int) dist;
+	distances[int_dist]++;
+      }
+    }
+  }
+}
+
+/*
+void parse_cells_from_file(float ** cells, int nbr_cells_in_block, long int position_of_pointer){
+  float ** cells;
+  float * cells_entries;
+  cells_entries = (float *) malloc(sizeof(float)*3*nbr_cells_in_block);
+  cells = (float **) malloc(sizeof(float *)*nbr_cells_in_block);
+  for(int ix=0, jx=0; ix<nbr_cells_in_block; ix++, jx+=3){
+    cells[ix] = cells_entries + jx;
+  }
+  //PARSE
+  fseek(fp,position_of_pointer,SEEK_SET);
+  for(int ix=0; ix<nbr_cells_in_block; ix++){
+    fscanf(fp, "%f %f %f", &cells[ix][0], &cells[ix][1], &cells[ix][2]);
+  }
+}
+*/

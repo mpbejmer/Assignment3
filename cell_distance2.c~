@@ -1,0 +1,137 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <omp.h>
+#include <time.h>
+
+long int MAX_MEMORY_STORAGE = 1024*1024*1024;
+int MAX_NBR_CELLS_IN_ARRAY = MAX_MEMORY_STORAGE / 12;
+int MAX_NBR_CELLS_IN_BLOCK = MAX_NBR_CELLS_IN_ARRAY / 2;
+
+/*
+float MAX_DISTANCE;
+float NBR_DISTANCE_POINTS;
+int NBR_DISTANCE_POINTS_int;
+*/
+
+//distances variables
+float MAX_DISTANCE = sqrt(3*20*20); //Max distance in coordinate system bounded by -10 to 10
+float NBR_DISTANCE_POINTS = MAX_DISTANCE/0.01 + 0.5; //2 decimal precision
+float NBR_DISTANCE_POINTS_int = (int) NBR_DISTANCE_POINTS;
+
+unsigned int * distances;
+
+float ** cells;
+float * cells_entries;
+
+int nbr_threads;
+unsigned long int nbr_cells = 0;
+
+//cell file
+FILE *fp;
+
+//block size for calculations
+
+//FUNCTIONS
+//generate_random_cells(int nbr_of_cells);
+
+
+int main(int argc, char * argv[]){
+
+  //Parse command line arguments
+  memmove(argv[1], argv[1]+2, strlen(argv[1])); //Removing -t
+  sscanf(argv[1], "%d", &nbr_threads);
+  
+  omp_set_num_threads(nbr_threads); //Sets number of threads
+  
+  /*
+  MAX_DISTANCE = sqrt(3*20*20); //Max distance in coordinate system bounded by -10 to 10
+  NBR_DISTANCE_POINTS = MAX_DISTANCE/0.01 + 0.5; //2 decimal precision
+  NBR_DISTANCE_POINTS_int = (int) NBR_DISTANCE_POINTS;
+  */
+  //create array of distances
+  distances = (unsigned int*) malloc(sizeof(unsigned int)*NBR_DISTANCE_POINTS);
+  for(int ix=0; ix<NBR_DISTANCE_POINTS; ix++){
+    distances[ix] = 0; //index related to distance: ix*10
+  }
+  
+  /*
+  //Generate file with cells
+  fp = fopen("cells4", "w");
+  int number_of_cells = 10000;
+  srand(time(NULL));
+  for(int ix=0; ix<number_of_cells; ix++){
+    double r1 = (double) rand()/RAND_MAX*20.0-10.0;
+    double r2 = (double) rand()/RAND_MAX*20.0-10.0;
+    double r3 = (double) rand()/RAND_MAX*20.0-10.0;
+    fprintf(fp, "%+07.03lf %+07.03lf %+07.03lf\n", r1, r2, r3);
+  }
+  fclose(fp);
+  */
+  
+  fp = fopen("cell_e5", "r");
+  //count lines
+  fseek(fp, 0, SEEK_END);
+  long long unsigned int size_of_file = ftell(fp);
+  float bytes_per_line = 24.0;
+  int nbr_cells = size_of_file / bytes_per_line;
+  //printf("nbr_cells: %d\n", nbr_cells);
+
+  int block_size;
+  if(nbr_cells > MAX_NBR_CELLS_IN_ARRAY){
+    block_size = MAX_NBR_CELLS_IN_BLOCK;
+  }
+  
+  //parse cells, TODO later: blocks
+  cells_entries = (float *) malloc(sizeof(float)*3*nbr_cells);
+  cells = (float **) malloc(sizeof(float *)*nbr_cells);
+  for(int ix=0, jx=0; ix<nbr_cells; ix++, jx+=3){
+    cells[ix] = cells_entries + jx;
+  }
+
+  fseek(fp,0,SEEK_SET);
+  for(int ix=0; ix<nbr_cells; ix++){
+    fscanf(fp, "%f %f %f", &cells[ix][0], &cells[ix][1], &cells[ix][2]);
+  }
+    
+  fclose(fp);
+  
+  //Calculate distances and add to distance vector
+#pragma omp parallel for schedule(dynamic) reduction(+:distances[:NBR_DISTANCE_POINTS_int])
+    for(size_t ix=0; ix<nbr_cells; ix++){
+      float ax = cells[ix][0];
+      float ay = cells[ix][1];
+      float az = cells[ix][2];
+      //#pragma omp parallel for reduction(+:distances[:NBR_DISTANCE_POINTS_int])
+      for(size_t jx=ix+1; jx<nbr_cells; jx++){
+	float dist;
+	int int_dist;
+	float dx = ax-cells[jx][0];
+	float dy = ay-cells[jx][1];
+	float dz = az-cells[jx][2];
+	dist = dx*dx + dy*dy + dz*dz;
+	dist = sqrt(dist)*10*10 + 0.5;
+	int_dist = (int) dist;
+	distances[int_dist]++;
+      }
+    }
+
+    //double sum = 0;
+    for(size_t ix=0; ix<NBR_DISTANCE_POINTS; ix++){
+      //printf("%d %d\n", ix, distances[ix]); //debug
+      if(distances[ix] != 0){
+	double dist = (double) ix/100;
+	//sum += distances[ix];
+	printf("%05.02lf %d\n", dist, distances[ix]);
+      }
+    }
+    //double diff = 100000.0*(100000.0-1.0)/2 - sum;
+    //printf("Total sum: %lf\n", sum);
+    //printf("Diff: %lf\n", diff);
+    //printf("NBR_DISTANCE_POINTS: %f\n",NBR_DISTANCE_POINTS);
+    //printf("NBR_DISTANCE_POINTS_int: %d\n",NBR_DISTANCE_POINTS_int);
+  
+  free(distances);
+  free(cells_entries);
+}
