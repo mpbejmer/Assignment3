@@ -49,7 +49,7 @@ int main(int argc, char * argv[]){
   //create array of distances
   distances = (unsigned int *) calloc(NBR_DISTANCE_POINTS_int,sizeof(unsigned int));
   
-  fp = fopen("cells", "r");
+  fp = fopen("cell_e4", "r");
   //count lines
   fseek(fp, 0, SEEK_END);
   long long unsigned int size_of_file = ftell(fp)+1;
@@ -68,7 +68,7 @@ int main(int argc, char * argv[]){
   
   long long int pointer_position1;
   long long int pointer_position2;
-  //long long int pointer_position;
+  
   for(int block_ix=1; block_ix<=nbr_blocks; block_ix++){
 
     float ** cells_block1;
